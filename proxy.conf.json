@@ -1,0 +1,6 @@
+{
+    "/api": {
+      "target": "http://cornerstonetech.org",
+      "secure": false
+    }
+  }

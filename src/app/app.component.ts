@@ -1,12 +1,17 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, DestroyRef, inject, OnInit } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { init as coreInit, Enums, RenderingEngine, setVolumesForViewports, volumeLoader } from '@cornerstonejs/core';
-import { init as dicomImageLoaderInit } from '@cornerstonejs/dicom-image-loader';
+// import { init as dicomImageLoaderInit } from '@cornerstonejs/dicom-image-loader';
+import { DicomApiService } from './dicom-api.service';
+import { initCornerstoneDICOMImageLoader } from './dicom-image-loader';
+import { cornerstoneStreamingImageVolumeLoader } from '@cornerstonejs/streaming-image-volume-loader';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet],
+  imports: [
+    RouterOutlet,
+  ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
 })
@@ -14,11 +19,12 @@ export class AppComponent implements OnInit {
   title = 'cornerstone-example';
 
 
+  private dicomApiServce = inject(DicomApiService);
+  private destroyRef = inject(DestroyRef);
 
   async ngOnInit(): Promise<void> {
     await coreInit();
-    await dicomImageLoaderInit();
-
+    initCornerstoneDICOMImageLoader();
 
     const content = document.getElementById('content');
 
@@ -44,7 +50,7 @@ export class AppComponent implements OnInit {
     const renderingEngineId = 'myRenderingEngine';
     const renderingEngine = new RenderingEngine(renderingEngineId);
 
-    const volumeId = 'myVolume';
+    const volumeId = 'cornerstoneStreamingImageVolume:CT_VOLUME';
 
     // Define a volume in memory
 
@@ -57,49 +63,61 @@ export class AppComponent implements OnInit {
     //   wadoRsRoot: 'https://d14fa38qiwhyfd.cloudfront.net/dicomweb',
     // });
 
-    // TODO Add urls example from manager
-    // const imageUrls = results?.map(image => {
-    //   return `wadouri:` + image.fileInMemoryLink;
-    // });
-    const imageIds: string[] = [];
+    // TODO Link to DICOM from manager
+    this.dicomApiServce.getDicomArchive('https://storage.vsi.health/main/dicoms/b773376b-df1a-4a96-bec8-f6090362f3e1/b773376b-df1a-4a96-bec8-f6090362f3e1.zip?AWSAccessKeyId=ImevncACGzrYitbtsZ9S&Expires=1733237319&Signature=wLtJ1em%2FRf%2Bm6yM1FFBcIWp1fSY%3D', this.destroyRef).subscribe(async res => {
 
-    const volume = await volumeLoader.createAndCacheVolume(volumeId, { imageIds });
+      const { results } = res;
+      const imageUrls = results?.map((image: any) => {
+        return `wadouri:` + image.fileInMemoryLink;
+      });
 
-    const viewportId1 = 'CT_AXIAL';
-    const viewportId2 = 'CT_SAGITTAL';
+      const viewportId1 = 'CT_AXIAL';
+      const viewportId2 = 'CT_SAGITTAL';
 
-    const viewportInput = [
-      {
-        viewportId: viewportId1,
-        element: element1,
-        type: 'orthographic',
-        defaultOptions: {
-          orientation: Enums.OrientationAxis.AXIAL,
+      const viewportInput = [
+        {
+          viewportId: viewportId1,
+          element: element1,
+          type: 'orthographic',
+          defaultOptions: {
+            orientation: Enums.OrientationAxis.AXIAL,
+          },
         },
-      },
-      {
-        viewportId: viewportId2,
-        element: element2,
-        type: 'orthographic',
-        defaultOptions: {
-          orientation: Enums.OrientationAxis.SAGITTAL,
+        {
+          viewportId: viewportId2,
+          element: element2,
+          type: 'orthographic',
+          defaultOptions: {
+            orientation: Enums.OrientationAxis.SAGITTAL,
+          },
         },
-      },
-    ];
+      ];
 
-    renderingEngine.setViewports(viewportInput as any);
+      renderingEngine.setViewports(viewportInput as any);
 
-    // Set the volume to load
-    volume.load();
+      volumeLoader.registerVolumeLoader(
+        'cornerstoneStreamingImageVolume',
+        cornerstoneStreamingImageVolumeLoader
+      );
 
-    setVolumesForViewports(
-      renderingEngine,
-      [{ volumeId }],
-      [viewportId1, viewportId2]
-    );
+      imageUrls && imageUrls.forEach(URL.revokeObjectURL);
 
-    // Render the image
-    renderingEngine.renderViewports([viewportId1, viewportId2]);
+
+      await volumeLoader.createAndCacheVolume(volumeId, { imageIds: imageUrls }).then(volume => {
+        (volume as any).load();
+        setVolumesForViewports(
+          renderingEngine,
+          [{ volumeId }],
+          [viewportId1, viewportId2]
+        );
+  
+        // Render the image
+        renderingEngine.renderViewports([viewportId1, viewportId2]);
+      })
+
+    });
+
+
 
   }
 }
